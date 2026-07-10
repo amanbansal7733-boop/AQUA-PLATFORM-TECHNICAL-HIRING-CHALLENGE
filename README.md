@@ -10,3 +10,6 @@ python -m tests.test_masked_weight
 To reproduce Part 2 baseline dense network model training, run:
 ```bash
 python -m train.train_baseline
+To execute the Part 3 Taylor-expansion self-pruning training track, run:
+```bash
+python -m train.train_pruning
