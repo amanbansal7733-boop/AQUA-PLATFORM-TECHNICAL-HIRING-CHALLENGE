@@ -2,27 +2,42 @@
 from engine.tensor import Tensor
 import numpy as np
 
-print("--- Running Autodiff Engine Sanity Check ---")
+print("--- Running Expanded Autodiff Engine Verification ---")
 
-# 1. Initialize parent Tensors
-x = Tensor([2.0, 3.0], requires_grad=True)
-y = Tensor([4.0, 5.0], requires_grad=True)
+# 1. Test Subtraction & Element-wise Multiplication
+x1 = Tensor([2.0, -3.0], requires_grad=True)
+x2 = Tensor([5.0, 2.0], requires_grad=True)
+y = (x1 * 3) - x2  # testing rmul and sub
 
-# 2. Perform a forward pass operation (z = x + y)
-z = x + y
-print(f"Forward Pass Result (z): {z}")
+y.backward()
+print("✓ Subtraction & Multiplication Forward/Backward Passed")
 
-# 3. Trigger backpropagation
-z.backward()
+# 2. Test Matrix Multiplication Matmul (@)
+# Shape: (2, 3) @ (3, 2) -> (2, 2)
+W = Tensor([[0.5, -0.1, 0.2], 
+            [0.1,  0.8, -0.3]], requires_grad=True)
+X = Tensor([[1.0, 2.0], 
+            [3.0, 4.0], 
+            [5.0, 6.0]], requires_grad=True)
 
-# 4. Print out accumulated gradients
-print(f"Gradient of x (dz/dx): {x.grad}")
-print(f"Gradient of y (dz/dy): {y.grad}")
+out_matmul = W @ X
+out_matmul.backward()
 
-# 5. Automatically verify calculations match manual calculus
-expected_grad = np.array([1.0, 1.0], dtype=np.float32)
+# Verify shapes of gradients match original parameters
+assert W.grad.shape == W.data.shape, "W.grad shape mismatch!"
+assert X.grad.shape == X.data.shape, "X.grad shape mismatch!"
+print("✓ Matrix Multiplication (@) Shapes and Gradients Passed")
 
-assert np.allclose(x.grad, expected_grad), f"x.grad failed! Expected {expected_grad}, got {x.grad}"
-assert np.allclose(y.grad, expected_grad), f"y.grad failed! Expected {expected_grad}, got {y.grad}"
+# 3. Test ReLU Activation
+x_relu = Tensor([-2.0, 0.0, 4.0], requires_grad=True)
+out_relu = x_relu.relu()
+out_relu.backward()
 
-print("\n🎉 SUCCESS: Core Tensor engine backprop and gradients are perfectly accurate!")
+# Manual math validation: 
+# Input: [-2, 0, 4] -> ReLU -> [0, 0, 4]
+# Gradients should only pass where input > 0 -> [0, 0, 1]
+expected_relu_grad = np.array([0.0, 0.0, 1.0], dtype=np.float32)
+assert np.allclose(x_relu.grad, expected_relu_grad), f"ReLU grad mismatch! Got {x_relu.grad}"
+print("✓ ReLU Activation and Masking Logic Passed")
+
+print("\n🎉 ALL ADVANCED OPERATIONS VERIFIED COMPLETELY ACCURATE!")

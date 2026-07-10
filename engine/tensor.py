@@ -79,3 +79,60 @@ class Tensor:
 
     def __repr__(self):
         return f"Tensor({self.data.tolist()}, op='{self.op}', shape={self.data.shape})"
+    
+    # --- SUBTRACTION ---
+    def __sub__(self, other):
+        other = other if isinstance(other, Tensor) else Tensor(other, requires_grad=False)
+        out = Tensor(self.data - other.data, parents=(self, other), op="-")
+        def _backward():
+            if self.requires_grad:
+                self.grad += self._unbroadcast(out.grad, self.data.shape)
+            if other.requires_grad:
+                other.grad += self._unbroadcast(-out.grad, other.data.shape)
+        out._backward = _backward
+        return out
+
+    def __rsub__(self, other):
+        other = other if isinstance(other, Tensor) else Tensor(other, requires_grad=False)
+        return other.__sub__(self)
+
+    # --- ELEMENT-WISE MULTIPLICATION ---
+    def __mul__(self, other):
+        other = other if isinstance(other, Tensor) else Tensor(other, requires_grad=False)
+        out = Tensor(self.data * other.data, parents=(self, other), op="*")
+        def _backward():
+            if self.requires_grad:
+                self.grad += self._unbroadcast(out.grad * other.data, self.data.shape)
+            if other.requires_grad:
+                other.grad += self._unbroadcast(out.grad * self.data, other.data.shape)
+        out._backward = _backward
+        return out
+
+    def __rmul__(self, other):
+        return self.__mul__(other)
+
+    # --- MATRIX MULTIPLICATION ---
+    def __matmul__(self, other):
+        if not isinstance(other, Tensor):
+            raise TypeError("Matrix multiplication requires another Tensor instance.")
+        out = Tensor(self.data @ other.data, parents=(self, other), op="@")
+        
+        def _backward():
+            if self.requires_grad:
+                # Gradient w.r.t self: out.grad @ other.T
+                self.grad += out.grad @ other.data.T
+            if other.requires_grad:
+                # Gradient w.r.t other: self.T @ out.grad
+                other.grad += self.data.T @ out.grad
+        out._backward = _backward
+        return out
+
+    # --- RELU NON-LINEARITY ---
+    def relu(self):
+        out = Tensor(np.maximum(0, self.data), parents=(self,), op="relu")
+        def _backward():
+            if self.requires_grad:
+                # Gradient flows only through elements greater than zero
+                self.grad += out.grad * (self.data > 0)
+        out._backward = _backward
+        return out
