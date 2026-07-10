@@ -136,3 +136,56 @@ class Tensor:
                 self.grad += out.grad * (self.data > 0)
         out._backward = _backward
         return out
+    
+    # --- REDUCTIONS ---
+    def sum(self, axis=None, keepdims=False):
+        out = Tensor(self.data.sum(axis=axis, keepdims=keepdims), parents=(self,), op="sum")
+        def _backward():
+            if self.requires_grad:
+                # Gradient of sum is just 1 broadcasted to the original input shape
+                grad = out.grad
+                if not keepdims and axis is not None:
+                    # Restore the squeezed axis for correct broadcasting
+                    grad = np.expand_dims(grad, axis=axis)
+                self.grad += np.broadcast_to(grad, self.data.shape)
+        out._backward = _backward
+        return out
+
+    def mean(self, axis=None, keepdims=False):
+        out = Tensor(self.data.mean(axis=axis, keepdims=keepdims), parents=(self,), op="mean")
+        def _backward():
+            if self.requires_grad:
+                grad = out.grad
+                if not keepdims and axis is not None:
+                    grad = np.expand_dims(grad, axis=axis)
+                # Compute total number of elements collapsed along the reduction axes
+                num_elements = self.data.size if axis is None else np.prod(np.array(self.data.shape)[axis])
+                self.grad += np.broadcast_to(grad, self.data.shape) / num_elements
+        out._backward = _backward
+        return out
+
+    # --- NUMERICALLY STABLE SOFTMAX CROSS-ENTROPY LOSS ---
+    @staticmethod
+    def softmax_cross_entropy(logits, targets):
+        """
+        Computes stable softmax cross-entropy loss.
+        logits: Tensor of shape (Batch, Classes)
+        targets: Tensor of shape (Batch, Classes) containing one-hot vectors
+        """
+        # Shift logits for numerical stability
+        shifted_logits = logits.data - np.max(logits.data, axis=-1, keepdims=True)
+        exps = np.exp(shifted_logits)
+        probs = exps / np.sum(exps, axis=-1, keepdims=True)
+        
+        # Avoid log(0) errors using a small clipping epsilon
+        eps = 1e-15
+        loss_val = -np.sum(targets.data * np.log(probs + eps)) / logits.data.shape[0]
+        
+        out = Tensor(loss_val, parents=(logits, targets), op="softmax_ce")
+        
+        def _backward():
+            if logits.requires_grad:
+                # Elegantly fused gradient: (Probs - Targets) / BatchSize
+                logits.grad += (probs - targets.data) / logits.data.shape[0] * out.grad
+        out._backward = _backward
+        return out
